@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SatCompare Pro - HTML Version</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fabric.js for Canvas manipulation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .slider-thumb::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #3b82f6;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        /* Custom scrollbar for sidebar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #262626; }
+        ::-webkit-scrollbar-thumb { background: #404040; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #525252; }
+        
+        .canvas-bg {
+            background-image: linear-gradient(45deg, #262626 25%, transparent 25%), 
+                              linear-gradient(-45deg, #262626 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #262626 75%), 
+                              linear-gradient(-45deg, transparent 75%, #262626 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        .tool-btn.active {
+            background-color: #2563eb; /* blue-600 */
+            color: white;
+            border-color: transparent;
+        }
+    </style>
+</head>
+<body class="bg-neutral-900 text-white h-screen flex flex-col overflow-hidden selection:bg-blue-500 selection:text-white">
+
+    <!-- Header -->
+    <header class="border-b border-neutral-700 bg-neutral-800 px-6 py-4 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="bg-blue-600 p-2 rounded-lg">
+                <i class="ph ph-stack text-2xl text-white"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight">SatCompare Pro</h1>
+                <p class="text-xs text-neutral-400">High Res Mode</p>
+            </div>
+        </div>
+        <button onclick="downloadCanvas()" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+            <i class="ph ph-download-simple text-lg"></i>
+            Export Analysis
+        </button>
+    </header>
+
+    <!-- Main Layout -->
+    <main class="flex flex-1 overflow-hidden">
+        
+        <!-- Left Sidebar: Controls -->
+        <div class="w-full max-w-xs bg-neutral-800 border-r border-neutral-700 p-5 flex flex-col gap-6 overflow-y-auto shrink-0 z-10 shadow-xl">
+            
+            <!-- Step 1: Uploads -->
+            <section class="border-b border-neutral-700 pb-6">
+                <h2 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <i class="ph ph-upload-simple"></i> 1. Load Imagery
+                </h2>
+                <div class="space-y-3">
+                    <!-- Base Image Input -->
+                    <div class="relative group">
+                        <input type="file" id="baseInput" accept="image/*" onchange="handleImageUpload(event, 'base')" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div id="baseDropzone" class="border-2 border-dashed border-neutral-600 hover:border-neutral-500 hover:bg-neutral-700 rounded-lg p-3 flex items-center gap-3 transition-colors">
+                            <div id="baseIcon" class="p-2 rounded-md bg-neutral-700 text-neutral-400 transition-colors">
+                                <i class="ph ph-image text-lg"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p id="baseText" class="text-xs font-medium truncate">Upload Base Image</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Overlay Image Input -->
+                    <div class="relative group">
+                        <input type="file" id="overlayInput" accept="image/*" onchange="handleImageUpload(event, 'overlay')" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div id="overlayDropzone" class="border-2 border-dashed border-neutral-600 hover:border-neutral-500 hover:bg-neutral-700 rounded-lg p-3 flex items-center gap-3 transition-colors">
+                            <div id="overlayIcon" class="p-2 rounded-md bg-neutral-700 text-neutral-400 transition-colors">
+                                <i class="ph ph-stack-simple text-lg"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p id="overlayText" class="text-xs font-medium truncate">Upload Overlay Image</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Step 2: Alignment Controls -->
+            <section id="alignSection" class="border-b border-neutral-700 pb-6 opacity-50 pointer-events-none transition-opacity">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xs font-bold text-neutral-400 uppercase tracking-wider flex items-center gap-2">
+                        <i class="ph ph-arrows-out-cardinal"></i> 2. Alignment
+                    </h2>
+                    <span id="alignBadge" class="hidden text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">Active</span>
+                </div>
+
+                <button id="btnAlign" onclick="setMode('align')" class="w-full py-2 px-4 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all bg-neutral-700 text-neutral-300 hover:bg-neutral-600 mb-4">
+                    <i class="ph ph-arrow-counter-clockwise"></i> Adjust Images
+                </button>
+
+                <!-- Sliders -->
+                <div class="space-y-4 px-1">
+                    <!-- Opacity -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-xs font-medium text-neutral-400">Opacity</label>
+                            <span id="opacityValue" class="text-xs text-neutral-500">50%</span>
+                        </div>
+                        <input type="range" min="0" max="1" step="0.01" value="0.5" oninput="updateOpacity(this.value)" class="w-full h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                    </div>
+                    
+                    <!-- Rotation -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-xs font-medium text-neutral-400">Rotation</label>
+                            <span id="rotationValue" class="text-xs text-neutral-500">0.0°</span>
+                        </div>
+                        <input type="range" min="-180" max="180" step="0.1" value="0" oninput="updateRotation(this.value)" class="w-full h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Step 3: Annotation Controls -->
+            <section id="annotateSection" class="opacity-50 pointer-events-none transition-opacity">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xs font-bold text-neutral-400 uppercase tracking-wider flex items-center gap-2">
+                        <i class="ph ph-pencil-simple"></i> 3. Annotation
+                    </h2>
+                    <span id="annotateBadge" class="hidden text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full border border-green-500/30">Active</span>
+                </div>
+
+                <!-- Main Annotation Toggle -->
+                <button id="btnAnnotate" onclick="setMode('annotate')" class="w-full py-2 px-4 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all bg-neutral-700 text-neutral-300 hover:bg-neutral-600 mb-4">
+                    <i class="ph ph-pencil-simple"></i> Enable Markup
+                </button>
+
+                <div id="annotationTools" class="hidden space-y-4">
+                    
+                    <!-- Tool Selection -->
+                    <div class="grid grid-cols-4 gap-2">
+                        <button onclick="setAnnotateTool('free')" id="tool-free" class="tool-btn active flex items-center justify-center p-2 rounded bg-neutral-700 hover:bg-neutral-600 border border-neutral-600" title="Freehand">
+                            <i class="ph ph-scribble-loop text-lg"></i>
+                        </button>
+                        <button onclick="setAnnotateTool('poly')" id="tool-poly" class="tool-btn flex items-center justify-center p-2 rounded bg-neutral-700 hover:bg-neutral-600 border border-neutral-600" title="Polygon (Click points, Dbl Click to finish)">
+                            <i class="ph ph-polygon text-lg"></i>
+                        </button>
+                        <button onclick="addShape('box')" class="flex items-center justify-center p-2 rounded bg-neutral-700 hover:bg-neutral-600 border border-neutral-600" title="Add Box">
+                            <i class="ph ph-square text-lg"></i>
+                        </button>
+                        <button onclick="addShape('circle')" class="flex items-center justify-center p-2 rounded bg-neutral-700 hover:bg-neutral-600 border border-neutral-600" title="Add Circle">
+                            <i class="ph ph-circle text-lg"></i>
+                        </button>
+                    </div>
+
+                    <!-- Colors -->
+                    <div>
+                        <label class="text-xs text-neutral-400 mb-2 block">Color</label>
+                        <div class="flex gap-2">
+                            <button onclick="setBrushColor('#ff0000')" class="color-btn w-6 h-6 rounded-full border-2 border-white scale-110 cursor-default" style="background-color: #ff0000;"></button>
+                        </div>
+                    </div>
+
+                    <!-- Size -->
+                    <div>
+                        <label class="text-xs text-neutral-400 mb-1 block">Line Width: <span id="brushSizeVal">5</span>px</label>
+                        <input type="range" min="1" max="20" value="5" oninput="setBrushSize(this.value)" class="w-full h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="grid grid-cols-2 gap-2 pt-2 border-t border-neutral-700">
+                        <button onclick="undoLastAnnotation()" class="py-2 px-3 flex items-center justify-center gap-2 text-xs bg-neutral-700 hover:bg-neutral-600 rounded text-neutral-300">
+                            <i class="ph ph-arrow-u-up-left"></i> Undo
+                        </button>
+                        <button onclick="clearAnnotations()" class="py-2 px-3 flex items-center justify-center gap-2 text-xs text-red-400 hover:text-red-300 bg-red-900/10 hover:bg-red-900/20 border border-red-900/30 rounded transition-colors">
+                            <i class="ph ph-trash"></i> Clear All
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Right Canvas Area -->
+        <div class="flex-1 bg-neutral-950/50 flex flex-col p-8 overflow-hidden relative">
+            <div class="flex-1 overflow-auto flex items-center justify-center" id="canvasScrollArea">
+                <div class="shadow-2xl shadow-black bg-neutral-800 relative canvas-bg">
+                    <canvas id="c"></canvas>
+                    <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center text-neutral-400 pointer-events-none bg-neutral-900">
+                        <div class="bg-neutral-800 p-6 rounded-full mb-4">
+                            <i class="ph ph-image text-5xl opacity-50"></i>
+                        </div>
+                        <p class="text-lg font-medium">No images loaded</p>
+                        <p class="text-sm">Upload Base Image to set resolution</p>
+                    </div>
+                </div>
+            </div>
+            <div id="tooltip" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 bg-neutral-800/90 backdrop-blur border border-neutral-700 text-neutral-300 px-4 py-2 rounded-full text-xs shadow-lg pointer-events-none z-20">
+                Use Rotation slider to align.
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let canvas;
+        let baseImage = null;
+        let overlayImage = null;
+        let currentMode = 'align';
+        let currentTool = 'free';
+        let brushColor = '#ff0000';
+        let brushSize = 5;
+        
+        // State for Polygon Drawing
+        let polyPoints = [];
+        let polyLines = [];
+        let polyActiveLine = null;
+
+        window.onload = function() {
+            canvas = new fabric.Canvas('c', {
+                width: 800,
+                height: 600,
+                backgroundColor: null,
+                selection: false,
+                preserveObjectStacking: true // Important for layering
+            });
+            
+            canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
+            canvas.freeDrawingBrush.width = brushSize;
+            canvas.freeDrawingBrush.color = brushColor;
+
+            // Polygon Event Listeners
+            canvas.on('mouse:down', function(options) {
+                if (currentMode === 'annotate' && currentTool === 'poly') {
+                    addPolygonPoint(options);
+                }
+            });
+
+            canvas.on('mouse:move', function(options) {
+                if (currentMode === 'annotate' && currentTool === 'poly' && polyActiveLine && polyPoints.length > 0) {
+                    const pointer = canvas.getPointer(options.e);
+                    polyActiveLine.set({ x2: pointer.x, y2: pointer.y });
+                    canvas.renderAll();
+                }
+            });
+
+            canvas.on('mouse:dblclick', function(options) {
+                if (currentMode === 'annotate' && currentTool === 'poly') {
+                    finishPolygon();
+                }
+            });
+        };
+
+        // --- POLYGON LOGIC ---
+        function addPolygonPoint(options) {
+            const pointer = canvas.getPointer(options.e);
+            const points = [pointer.x, pointer.y, pointer.x, pointer.y];
+            
+            // Draw a line segment
+            const line = new fabric.Line(points, {
+                strokeWidth: 2,
+                fill: '#999999',
+                stroke: '#999999',
+                class: 'line',
+                originX: 'center',
+                originY: 'center',
+                selectable: false,
+                evented: false
+            });
+            
+            polyPoints.push({ x: pointer.x, y: pointer.y });
+            polyLines.push(line);
+            canvas.add(line);
+            polyActiveLine = line;
+        }
+
+        function finishPolygon() {
+            // Clean up lines
+            polyLines.forEach(line => canvas.remove(line));
+            polyLines = [];
+            polyActiveLine = null;
+
+            if (polyPoints.length > 2) {
+                const polygon = new fabric.Polygon(polyPoints, {
+                    stroke: brushColor,
+                    strokeWidth: brushSize,
+                    fill: 'rgba(255, 0, 0, 0.1)', // Slight fill for visibility
+                    objectCaching: false,
+                    selectable: true,
+                    evented: true
+                });
+                canvas.add(polygon);
+            }
+            
+            // Reset
+            polyPoints = [];
+            // Optional: Switch back to free or keep drawing?
+            // Keep drawing allows multiple polygons.
+        }
+
+        function handleImageUpload(e, type) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(f) {
+                const data = f.target.result;
+                
+                fabric.Image.fromURL(data, function(img) {
+                    if (type === 'base') {
+                        canvas.setDimensions({ width: img.width, height: img.height });
+                        img.set({
+                            left: img.width / 2,
+                            top: img.height / 2,
+                            originX: 'center',
+                            originY: 'center',
+                            selectable: false,
+                            evented: false,
+                            id: 'base_img'
+                        });
+                        const oldBase = canvas.getObjects().find(o => o.id === 'base_img');
+                        if (oldBase) canvas.remove(oldBase);
+                        canvas.add(img);
+                        canvas.sendToBack(img);
+                        baseImage = true;
+                        updateUploadUI('base', true);
+                        document.getElementById('emptyState').style.display = 'none';
+                        document.getElementById('annotateSection').classList.remove('opacity-50', 'pointer-events-none');
+                    } else {
+                        img.set({
+                            left: canvas.width / 2,
+                            top: canvas.height / 2,
+                            originX: 'center',
+                            originY: 'center',
+                            opacity: 0.5,
+                            id: 'overlay_img',
+                            // DISABLE ALL INTERACTION FOR OVERLAY (Lock everything)
+                            selectable: false,
+                            evented: false,
+                            hasControls: false,
+                            hasBorders: false,
+                            lockMovementX: true,
+                            lockMovementY: true,
+                            lockRotation: true,
+                            lockScalingX: true,
+                            lockScalingY: true
+                        });
+                        const oldOverlay = canvas.getObjects().find(o => o.id === 'overlay_img');
+                        if (oldOverlay) canvas.remove(oldOverlay);
+                        canvas.add(img);
+                        img.moveTo(1); 
+                        overlayImage = true;
+                        updateUploadUI('overlay', true);
+                        document.getElementById('alignSection').classList.remove('opacity-50', 'pointer-events-none');
+                        document.getElementById('tooltip').classList.remove('hidden');
+                        setMode('align');
+                        // canvas.setActiveObject(img); // REMOVED: Don't select it
+                    }
+                    canvas.requestRenderAll();
+                });
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // --- MODE & TOOL LOGIC ---
+
+        function setMode(mode) {
+            currentMode = mode;
+            const overlayObj = canvas.getObjects().find(o => o.id === 'overlay_img');
+            
+            // UI References
+            const btnAlign = document.getElementById('btnAlign');
+            const btnAnnotate = document.getElementById('btnAnnotate');
+            const alignBadge = document.getElementById('alignBadge');
+            const annotateBadge = document.getElementById('annotateBadge');
+            const tools = document.getElementById('annotationTools');
+            const tip = document.getElementById('tooltip');
+
+            // Reset Styles
+            btnAlign.className = "w-full py-2 px-4 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all bg-neutral-700 text-neutral-300 hover:bg-neutral-600 mb-4";
+            btnAnnotate.className = "w-full py-2 px-4 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all bg-neutral-700 text-neutral-300 hover:bg-neutral-600 mb-4";
+            alignBadge.classList.add('hidden');
+            annotateBadge.classList.add('hidden');
+            tools.classList.add('hidden');
+
+            if (mode === 'align') {
+                canvas.isDrawingMode = false;
+                
+                // FORCE OVERLAY NON-INTERACTIVE
+                if (overlayObj) {
+                    overlayObj.selectable = false;
+                    overlayObj.evented = false;
+                    // Do not setActiveObject
+                }
+                
+                // Disable Annotation Selection
+                canvas.forEachObject(obj => {
+                    if (obj.id !== 'overlay_img' && obj.id !== 'base_img') {
+                        obj.selectable = false;
+                        obj.evented = false;
+                    }
+                });
+
+                // UI
+                btnAlign.classList.remove('bg-neutral-700', 'text-neutral-300');
+                btnAlign.classList.add('bg-blue-600', 'text-white');
+                alignBadge.classList.remove('hidden');
+                tip.textContent = "Use Rotation slider to align.";
+            } else {
+                // Annotate Mode
+                if (overlayObj) {
+                    overlayObj.selectable = false;
+                    overlayObj.evented = false;
+                }
+                // Enable Annotation Selection
+                canvas.forEachObject(obj => {
+                    if (obj.id !== 'overlay_img' && obj.id !== 'base_img') {
+                        obj.selectable = true;
+                        obj.evented = true;
+                    }
+                });
+                
+                // Set initial tool
+                setAnnotateTool(currentTool);
+
+                // UI
+                btnAnnotate.classList.remove('bg-neutral-700', 'text-neutral-300');
+                btnAnnotate.classList.add('bg-green-600', 'text-white');
+                annotateBadge.classList.remove('hidden');
+                tools.classList.remove('hidden');
+                tip.textContent = "Use tools to mark changes.";
+            }
+            canvas.requestRenderAll();
+        }
+
+        function setAnnotateTool(tool) {
+            currentTool = tool;
+            
+            // Update UI buttons
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            const btn = document.getElementById('tool-' + tool);
+            if (btn) btn.classList.add('active');
+
+            if (tool === 'free') {
+                canvas.isDrawingMode = true;
+                // Reset polygon state just in case
+                polyPoints = [];
+            } else if (tool === 'poly') {
+                canvas.isDrawingMode = false;
+                // Make sure we can't select other things while plotting points
+                canvas.discardActiveObject();
+                canvas.forEachObject(o => o.selectable = false);
+            } else {
+                // Box/Circle mode implies just editing
+                canvas.isDrawingMode = false;
+            }
+        }
+
+        function addShape(type) {
+            setMode('annotate'); // Ensure we are in annotate mode
+            canvas.isDrawingMode = false; // Disable drawing to manipulate shape
+            
+            let shape;
+            const center = canvas.getCenter();
+            
+            const commonProps = {
+                left: center.left,
+                top: center.top,
+                stroke: brushColor,
+                strokeWidth: brushSize,
+                fill: 'transparent',
+                originX: 'center',
+                originY: 'center'
+            };
+
+            if (type === 'box') {
+                shape = new fabric.Rect({
+                    ...commonProps,
+                    width: 100,
+                    height: 100
+                });
+            } else if (type === 'circle') {
+                shape = new fabric.Circle({
+                    ...commonProps,
+                    radius: 50
+                });
+            }
+
+            canvas.add(shape);
+            canvas.setActiveObject(shape);
+            canvas.requestRenderAll();
+        }
+
+        // --- ADJUSTMENT LOGIC ---
+        function updateOpacity(val) {
+            document.getElementById('opacityValue').textContent = Math.round(val * 100) + '%';
+            const overlayObj = canvas.getObjects().find(o => o.id === 'overlay_img');
+            if (overlayObj) {
+                overlayObj.set('opacity', parseFloat(val));
+                canvas.requestRenderAll();
+            }
+        }
+
+        function updateRotation(val) {
+            document.getElementById('rotationValue').textContent = parseFloat(val).toFixed(1) + '°';
+            const overlayObj = canvas.getObjects().find(o => o.id === 'overlay_img');
+            if (overlayObj) {
+                overlayObj.rotate(parseFloat(val));
+                canvas.requestRenderAll();
+            }
+        }
+
+        // --- ANNOTATION HELPERS ---
+        function setBrushColor(color) {
+            brushColor = color;
+            canvas.freeDrawingBrush.color = color;
+            
+            // Update active shape if selected
+            const activeObj = canvas.getActiveObject();
+            if (activeObj && activeObj.id !== 'overlay_img' && activeObj.id !== 'base_img') {
+                activeObj.set('stroke', color);
+                canvas.requestRenderAll();
+            }
+
+            // UI
+            const btns = document.querySelectorAll('.color-btn');
+            btns.forEach(btn => {
+                btn.classList.remove('border-white', 'scale-110');
+                btn.classList.add('border-transparent');
+            });
+            event.target.classList.remove('border-transparent');
+            event.target.classList.add('border-white', 'scale-110');
+        }
+
+        function setBrushSize(val) {
+            brushSize = parseInt(val, 10);
+            document.getElementById('brushSizeVal').textContent = val;
+            canvas.freeDrawingBrush.width = brushSize;
+            
+            // Update active shape if selected
+            const activeObj = canvas.getActiveObject();
+            if (activeObj && activeObj.id !== 'overlay_img' && activeObj.id !== 'base_img') {
+                activeObj.set('strokeWidth', brushSize);
+                canvas.requestRenderAll();
+            }
+        }
+
+        function undoLastAnnotation() {
+            const objects = canvas.getObjects();
+            // Iterate backwards
+            for (let i = objects.length - 1; i >= 0; i--) {
+                const obj = objects[i];
+                // Don't remove the base images
+                if (obj.id !== 'base_img' && obj.id !== 'overlay_img') {
+                    canvas.remove(obj);
+                    break; // Remove only one
+                }
+            }
+        }
+
+        function clearAnnotations() {
+            const objects = canvas.getObjects();
+            objects.forEach(obj => {
+                if (obj.id !== 'base_img' && obj.id !== 'overlay_img') {
+                    canvas.remove(obj);
+                }
+            });
+        }
+
+        function downloadCanvas() {
+            if (!canvas) return;
+            const link = document.createElement('a');
+            link.download = 'satellite-analysis.png';
+            link.href = canvas.toDataURL({ format: 'png', quality: 1, multiplier: 1 });
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function updateUploadUI(type, uploaded) {
+            if (uploaded) {
+                const dropzone = document.getElementById(type + 'Dropzone');
+                const icon = document.getElementById(type + 'Icon');
+                const text = document.getElementById(type + 'Text');
+                const colorClass = type === 'base' ? 'green' : 'blue';
+                
+                dropzone.className = `border-2 border-dashed rounded-lg p-3 flex items-center gap-3 transition-colors border-${colorClass}-500/50 bg-${colorClass}-500/10`;
+                icon.className = `p-2 rounded-md bg-${colorClass}-500 text-white`;
+                text.textContent = type === 'base' ? 'Base Image Loaded' : 'Overlay Image Loaded';
+            }
+        }
+    </script>
+</body>
+</html>
