@@ -53,7 +53,7 @@
                 <i class="ph ph-stack text-2xl text-white"></i>
             </div>
             <div>
-                <h1 class="text-xl font-bold tracking-tight">Annotator Pro</h1>
+                <h1 class="text-xl font-bold tracking-tight">Image Annotator</h1>
                 <p class="text-xs text-neutral-400">High Res Mode</p>
             </div>
         </div>
@@ -221,6 +221,7 @@
         let canvas;
         let baseImage = null;
         let overlayImage = null;
+        let baseFileName = ''; // Store base filename
         let currentMode = 'align';
         let currentTool = 'free';
         let brushColor = '#ff0000';
@@ -317,6 +318,14 @@
             const file = e.target.files[0];
             if (!file) return;
 
+            // Clear existing annotations immediately when a new file is selected
+            clearAnnotations();
+
+            // Capture filename for base image
+            if (type === 'base') {
+                baseFileName = file.name;
+            }
+
             const reader = new FileReader();
             reader.onload = function(f) {
                 const data = f.target.result;
@@ -341,6 +350,19 @@
                         updateUploadUI('base', true);
                         document.getElementById('emptyState').style.display = 'none';
                         document.getElementById('annotateSection').classList.remove('opacity-50', 'pointer-events-none');
+                        
+                        // Check for existing overlay and re-center it if it exists
+                        // This handles the case where Overlay is uploaded BEFORE Base
+                        const existingOverlay = canvas.getObjects().find(o => o.id === 'overlay_img');
+                        if (existingOverlay) {
+                            existingOverlay.set({
+                                left: canvas.width / 2,
+                                top: canvas.height / 2
+                            });
+                            existingOverlay.setCoords();
+                            existingOverlay.moveTo(1); // Ensure it's above base
+                        }
+
                     } else {
                         img.set({
                             left: canvas.width / 2,
@@ -582,11 +604,84 @@
             });
         }
 
-        function downloadCanvas() {
+        async function downloadCanvas() {
             if (!canvas) return;
+
+            // Generate Default Name
+            let suggestedFileName = 'satellite-analysis.png';
+            if (baseFileName) {
+                // Remove extension
+                const nameWithoutExt = baseFileName.substring(0, baseFileName.lastIndexOf('.')) || baseFileName;
+                
+                // Replace "BEFORE_" with "ANNOTATED_" or just prepend "ANNOTATED_"
+                if (nameWithoutExt.toUpperCase().startsWith('BEFORE_')) {
+                    const suffix = nameWithoutExt.substring(7); // remove "BEFORE_"
+                    suggestedFileName = `ANNOTATED_${suffix}.png`;
+                } else {
+                    suggestedFileName = `ANNOTATED_${nameWithoutExt}.png`;
+                }
+            }
+
+            // --- NEW EXPORT LOGIC START ---
+            // Prepare Canvas for Export: Hide Base, Make Overlay Opaque
+            const baseObj = canvas.getObjects().find(o => o.id === 'base_img');
+            const overlayObj = canvas.getObjects().find(o => o.id === 'overlay_img');
+            
+            const originalBaseVisible = baseObj ? baseObj.visible : true;
+            const originalOverlayOpacity = overlayObj ? overlayObj.opacity : 1;
+
+            // Hide Base, Full Opacity Overlay
+            if (baseObj) baseObj.set('visible', false);
+            if (overlayObj) overlayObj.set('opacity', 1);
+            
+            canvas.renderAll(); // Apply for snapshot
+            // --- NEW EXPORT LOGIC END ---
+
+            // 1. Convert Canvas to Blob
+            const dataURL = canvas.toDataURL({ format: 'png', quality: 1, multiplier: 1 });
+            
+            // --- RESTORE LOGIC START ---
+            if (baseObj) baseObj.set('visible', originalBaseVisible);
+            if (overlayObj) overlayObj.set('opacity', originalOverlayOpacity);
+            canvas.renderAll(); // Restore UI state
+            // --- RESTORE LOGIC END ---
+            
+            const blob = await (await fetch(dataURL)).blob();
+
+            // 2. Try Modern "Save As" Dialog (Chrome/Edge/Opera)
+            // This forces the "Save As" window allowing directory selection
+            if (window.showSaveFilePicker) {
+                try {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: suggestedFileName,
+                        types: [{
+                            description: 'PNG Image',
+                            accept: { 'image/png': ['.png'] },
+                        }],
+                    });
+                    const writable = await handle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                    return; 
+                } catch (err) {
+                    // If user cancelled, just return. If error, fall through to fallback.
+                    if (err.name === 'AbortError') return;
+                    console.warn('Save Picker failed, falling back.');
+                }
+            }
+
+            // 3. Fallback (Firefox/Safari/Others)
+            // We can ask for the name, but directory depends on browser settings
+            let fileName = prompt("Enter file name to save:", suggestedFileName);
+            if (!fileName) return; // User cancelled
+
+            if (!fileName.toLowerCase().endsWith('.png')) {
+                fileName += '.png';
+            }
+
             const link = document.createElement('a');
-            link.download = 'satellite-analysis.png';
-            link.href = canvas.toDataURL({ format: 'png', quality: 1, multiplier: 1 });
+            link.download = fileName;
+            link.href = dataURL;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -606,5 +701,4 @@
         }
     </script>
 </body>
-
 </html>
