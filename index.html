@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SatCompare Pro - HTML Version</title>
+    <title>Image Annotator</title>
     <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Fabric.js for Canvas manipulation -->
@@ -83,7 +83,7 @@
                                 <i class="ph ph-image text-lg"></i>
                             </div>
                             <div class="flex-1 min-w-0">
-                                <p id="baseText" class="text-xs font-medium truncate">Upload Base Image</p>
+                                <p id="baseText" class="text-xs font-medium truncate">Upload Base Image (Before)</p>
                             </div>
                         </div>
                     </div>
@@ -96,7 +96,7 @@
                                 <i class="ph ph-stack-simple text-lg"></i>
                             </div>
                             <div class="flex-1 min-w-0">
-                                <p id="overlayText" class="text-xs font-medium truncate">Upload Overlay Image</p>
+                                <p id="overlayText" class="text-xs font-medium truncate">Upload Overlay Image (After)</p>
                             </div>
                         </div>
                     </div>
@@ -167,20 +167,17 @@
                     </div>
 
                     <!-- Info -->
-                    
                     <div class="text-xs text-neutral-400 space-y-1 mt-2">
                         <p class="flex items-center gap-2">
                             <span class="w-3 h-3 bg-black border border-white/20 rounded-sm inline-block"></span>
-                            <span>Color: Black </span>
+                            <span>Color: Black</span>
                         </p>
                         
                         <!-- <p class="flex items-center gap-2">
                             <i class="ph ph-ruler"></i>
                             <span>Size: 1px (Image Scale)</span>
                         </p> -->
-                        
                     </div>
-                    
 
                     <!-- Actions -->
                     <div class="grid grid-cols-2 gap-2 pt-2 border-t border-neutral-700">
@@ -374,8 +371,8 @@
                     strokeWidth: 1, // Output pixel size constraint
                     fill: 'rgba(0, 0, 0, 0.5)', 
                     objectCaching: false,
-                    selectable: true,
-                    evented: true
+                    selectable: false, // PREVENT SELECTION
+                    evented: false     // PREVENT INTERACTION (Click-through)
                 });
                 canvas.add(polygon);
             }
@@ -518,13 +515,6 @@
                     overlayObj.selectable = false;
                     overlayObj.evented = false;
                 }
-                // Enable Annotation Selection
-                canvas.forEachObject(obj => {
-                    if (obj.id !== 'overlay_img' && obj.id !== 'base_img') {
-                        obj.selectable = true;
-                        obj.evented = true;
-                    }
-                });
                 
                 // Set initial tool
                 setAnnotateTool('poly'); // Default
@@ -718,4 +708,3 @@
     </script>
 </body>
 </html>
-
