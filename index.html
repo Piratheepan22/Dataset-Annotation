@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Annotator</title>
+    <title>Image Annotator</title></title>
     <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Fabric.js for Canvas manipulation -->
@@ -28,6 +28,7 @@
         ::-webkit-scrollbar-thumb { background: #404040; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #525252; }
         
+        /* Checkboard pattern for transparent background */
         .canvas-bg {
             background-image: linear-gradient(45deg, #262626 25%, transparent 25%), 
                               linear-gradient(-45deg, #262626 25%, transparent 25%), 
@@ -172,7 +173,6 @@
                             <span class="w-3 h-3 bg-black border border-white/20 rounded-sm inline-block"></span>
                             <span>Color: Black</span>
                         </p>
-                        
                         <!-- <p class="flex items-center gap-2">
                             <i class="ph ph-ruler"></i>
                             <span>Size: 1px (Image Scale)</span>
@@ -193,22 +193,21 @@
         </div>
 
         <!-- Right Canvas Area -->
-        <div class="flex-1 bg-neutral-950/50 flex flex-col p-8 overflow-hidden relative">
-            <div class="flex-1 overflow-auto flex items-center justify-center relative" id="canvasScrollArea">
-                <div class="shadow-2xl shadow-black bg-neutral-800 relative canvas-bg">
-                    <canvas id="c"></canvas>
-                    <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center text-neutral-400 pointer-events-none bg-neutral-900">
-                        <div class="bg-neutral-800 p-6 rounded-full mb-4">
-                            <i class="ph ph-image text-5xl opacity-50"></i>
-                        </div>
-                        <p class="text-lg font-medium">No images loaded</p>
-                        <p class="text-sm">Upload Base Image to set resolution</p>
+        <div class="flex-1 bg-neutral-950/50 flex flex-col p-0 overflow-hidden relative">
+            <div class="flex-1 w-full h-full relative" id="canvasScrollArea">
+                <canvas id="c" class="w-full h-full"></canvas>
+                
+                <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center text-neutral-400 pointer-events-none bg-neutral-900 z-10">
+                    <div class="bg-neutral-800 p-6 rounded-full mb-4">
+                        <i class="ph ph-image text-5xl opacity-50"></i>
                     </div>
+                    <p class="text-lg font-medium">No images loaded</p>
+                    <p class="text-sm">Upload Base Image to start</p>
                 </div>
                 
                 <!-- Zoom Controls Floating -->
                 <div class="absolute bottom-8 right-8 flex flex-col gap-2 z-20">
-                    <button onclick="resetZoom()" class="p-2 bg-neutral-800 border border-neutral-600 rounded hover:bg-neutral-700 text-white shadow-lg" title="Reset Zoom">
+                    <button onclick="fitToScreen()" class="p-2 bg-neutral-800 border border-neutral-600 rounded hover:bg-neutral-700 text-white shadow-lg" title="Fit to Screen">
                         <i class="ph ph-arrows-out"></i>
                     </button>
                     <button onclick="zoomCanvas(1.1)" class="p-2 bg-neutral-800 border border-neutral-600 rounded hover:bg-neutral-700 text-white shadow-lg" title="Zoom In">
@@ -231,6 +230,8 @@
         let baseImage = null;
         let overlayImage = null;
         let baseFileName = ''; 
+        let baseImgWidth = 0;
+        let baseImgHeight = 0;
         let currentMode = 'align';
         let currentTool = 'poly'; 
         let brushColor = '#000000'; 
@@ -247,12 +248,22 @@
         let polyActiveLine = null;
 
         window.onload = function() {
+            const container = document.getElementById('canvasScrollArea');
             canvas = new fabric.Canvas('c', {
-                width: 800,
-                height: 600,
-                backgroundColor: null,
+                width: container.clientWidth,
+                height: container.clientHeight,
+                backgroundColor: '#1a1a1a', // Dark background for the workspace
                 selection: false,
-                preserveObjectStacking: true // Important for layering
+                preserveObjectStacking: true
+            });
+            
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                canvas.setDimensions({
+                    width: container.clientWidth,
+                    height: container.clientHeight
+                });
+                canvas.renderAll();
             });
             
             canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
@@ -276,7 +287,6 @@
                 var evt = options.e;
                 if (currentTool === 'pan') {
                     isDragging = true;
-                    // selection: false on canvas should prevent selection box
                     lastPosX = evt.clientX;
                     lastPosY = evt.clientY;
                     canvas.defaultCursor = 'grabbing';
@@ -296,9 +306,6 @@
                     lastPosX = e.clientX;
                     lastPosY = e.clientY;
                 } else if (currentMode === 'annotate' && currentTool === 'poly' && polyActiveLine && polyPoints.length > 0) {
-                    // Update polygon line preview
-                    // Need to account for zoom/pan when calculating pointer? 
-                    // Fabric's getPointer usually handles this.
                     const pointer = canvas.getPointer(options.e);
                     polyActiveLine.set({ x2: pointer.x, y2: pointer.y });
                     canvas.renderAll();
@@ -327,12 +334,22 @@
             zoom *= factor;
             if (zoom > 20) zoom = 20;
             if (zoom < 0.01) zoom = 0.01;
-            // Zoom to center of canvas
             canvas.zoomToPoint({ x: canvas.width / 2, y: canvas.height / 2 }, zoom);
         }
 
-        function resetZoom() {
-            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+        function fitToScreen() {
+            if (!baseImgWidth || !baseImgHeight) return;
+            
+            const scaleX = canvas.width / baseImgWidth;
+            const scaleY = canvas.height / baseImgHeight;
+            const scale = Math.min(scaleX, scaleY) * 0.9; // 90% fit
+            
+            const center = canvas.getCenter();
+            
+            canvas.setViewportTransform([scale, 0, 0, scale, 
+                center.left - (baseImgWidth * scale) / 2, 
+                center.top - (baseImgHeight * scale) / 2
+            ]);
         }
 
         // --- POLYGON LOGIC ---
@@ -340,10 +357,8 @@
             const pointer = canvas.getPointer(options.e);
             const points = [pointer.x, pointer.y, pointer.x, pointer.y];
             
-            // Draw a line segment
             const line = new fabric.Line(points, {
-                strokeWidth: 1 / canvas.getZoom(), // Keep visual line consistent even if zoomed in? Or match pixel? 
-                // Let's keep consistent stroke for visibility during edit
+                strokeWidth: 1, 
                 stroke: '#000000',
                 fill: '#000000',
                 class: 'line',
@@ -360,7 +375,6 @@
         }
 
         function finishPolygon() {
-            // Clean up lines
             polyLines.forEach(line => canvas.remove(line));
             polyLines = [];
             polyActiveLine = null;
@@ -368,16 +382,14 @@
             if (polyPoints.length > 2) {
                 const polygon = new fabric.Polygon(polyPoints, {
                     stroke: '#000000',
-                    strokeWidth: 1, // Output pixel size constraint
+                    strokeWidth: 1, 
                     fill: 'rgba(0, 0, 0, 0.5)', 
                     objectCaching: false,
-                    selectable: false, // PREVENT SELECTION
-                    evented: false     // PREVENT INTERACTION (Click-through)
+                    selectable: false, 
+                    evented: false     
                 });
                 canvas.add(polygon);
             }
-            
-            // Reset
             polyPoints = [];
         }
 
@@ -385,10 +397,8 @@
             const file = e.target.files[0];
             if (!file) return;
 
-            // Clear existing annotations immediately when a new file is selected
             clearAnnotations();
 
-            // Capture filename for base image
             if (type === 'base') {
                 baseFileName = file.name;
             }
@@ -399,48 +409,49 @@
                 
                 fabric.Image.fromURL(data, function(img) {
                     if (type === 'base') {
-                        canvas.setDimensions({ width: img.width, height: img.height });
+                        // Don't resize canvas, just store dims
+                        baseImgWidth = img.width;
+                        baseImgHeight = img.height;
+                        
                         img.set({
-                            left: img.width / 2,
-                            top: img.height / 2,
-                            originX: 'center',
-                            originY: 'center',
+                            left: 0,
+                            top: 0,
+                            originX: 'left',
+                            originY: 'top',
                             selectable: false,
                             evented: false,
                             id: 'base_img'
                         });
+                        
                         const oldBase = canvas.getObjects().find(o => o.id === 'base_img');
                         if (oldBase) canvas.remove(oldBase);
+                        
                         canvas.add(img);
                         canvas.sendToBack(img);
                         baseImage = true;
+                        
                         updateUploadUI('base', true);
                         document.getElementById('emptyState').style.display = 'none';
                         document.getElementById('annotateSection').classList.remove('opacity-50', 'pointer-events-none');
                         
-                        // Check for existing overlay and re-center it if it exists
+                        // Handle Overlay Ordering
                         const existingOverlay = canvas.getObjects().find(o => o.id === 'overlay_img');
                         if (existingOverlay) {
-                            existingOverlay.set({
-                                left: canvas.width / 2,
-                                top: canvas.height / 2
-                            });
+                            existingOverlay.set({ left: 0, top: 0 });
                             existingOverlay.setCoords();
                             existingOverlay.moveTo(1); 
                         }
                         
-                        // Reset zoom on new base
-                        resetZoom();
+                        fitToScreen(); // Center view on new image
 
                     } else {
                         img.set({
-                            left: canvas.width / 2,
-                            top: canvas.height / 2,
-                            originX: 'center',
-                            originY: 'center',
+                            left: 0,
+                            top: 0,
+                            originX: 'left',
+                            originY: 'top',
                             opacity: 0.5,
                             id: 'overlay_img',
-                            // DISABLE ALL INTERACTION FOR OVERLAY
                             selectable: false,
                             evented: false,
                             hasControls: false,
@@ -467,13 +478,10 @@
             reader.readAsDataURL(file);
         }
 
-        // --- MODE & TOOL LOGIC ---
-
         function setMode(mode) {
             currentMode = mode;
-            const overlayObj = canvas.getObjects().find(o => o.id === 'overlay_img');
             
-            // UI References
+            // UI
             const btnAlign = document.getElementById('btnAlign');
             const btnAnnotate = document.getElementById('btnAnnotate');
             const alignBadge = document.getElementById('alignBadge');
@@ -481,7 +489,6 @@
             const tools = document.getElementById('annotationTools');
             const tip = document.getElementById('tooltip');
 
-            // Reset Styles
             btnAlign.className = "w-full py-2 px-4 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all bg-neutral-700 text-neutral-300 hover:bg-neutral-600 mb-4";
             btnAnnotate.className = "w-full py-2 px-4 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all bg-neutral-700 text-neutral-300 hover:bg-neutral-600 mb-4";
             alignBadge.classList.add('hidden');
@@ -490,36 +497,12 @@
 
             if (mode === 'align') {
                 canvas.isDrawingMode = false;
-                
-                if (overlayObj) {
-                    overlayObj.selectable = false;
-                    overlayObj.evented = false;
-                }
-                
-                // Disable Annotation Selection
-                canvas.forEachObject(obj => {
-                    if (obj.id !== 'overlay_img' && obj.id !== 'base_img') {
-                        obj.selectable = false;
-                        obj.evented = false;
-                    }
-                });
-
-                // UI
                 btnAlign.classList.remove('bg-neutral-700', 'text-neutral-300');
                 btnAlign.classList.add('bg-blue-600', 'text-white');
                 alignBadge.classList.remove('hidden');
                 tip.textContent = "Use Rotation slider to align.";
             } else {
-                // Annotate Mode
-                if (overlayObj) {
-                    overlayObj.selectable = false;
-                    overlayObj.evented = false;
-                }
-                
-                // Set initial tool
-                setAnnotateTool('poly'); // Default
-
-                // UI
+                setAnnotateTool('poly');
                 btnAnnotate.classList.remove('bg-neutral-700', 'text-neutral-300');
                 btnAnnotate.classList.add('bg-green-600', 'text-white');
                 annotateBadge.classList.remove('hidden');
@@ -532,7 +515,6 @@
         function setAnnotateTool(tool) {
             currentTool = tool;
             
-            // Update UI
             document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
             const btn = document.getElementById('tool-' + tool);
             if (btn) btn.classList.add('active');
@@ -540,7 +522,6 @@
             if (tool === 'pan') {
                 canvas.isDrawingMode = false;
                 canvas.discardActiveObject();
-                // Ensure objects aren't draggable individually
                 canvas.forEachObject(o => o.selectable = false);
             } else if (tool === 'poly') {
                 canvas.isDrawingMode = false;
@@ -550,7 +531,6 @@
             }
         }
 
-        // --- ADJUSTMENT LOGIC ---
         function updateOpacity(val) {
             document.getElementById('opacityValue').textContent = Math.round(val * 100) + '%';
             const overlayObj = canvas.getObjects().find(o => o.id === 'overlay_img');
@@ -571,13 +551,11 @@
 
         function undoLastAnnotation() {
             const objects = canvas.getObjects();
-            // Iterate backwards
             for (let i = objects.length - 1; i >= 0; i--) {
                 const obj = objects[i];
-                // Don't remove the base images
                 if (obj.id !== 'base_img' && obj.id !== 'overlay_img') {
                     canvas.remove(obj);
-                    break; // Remove only one
+                    break; 
                 }
             }
         }
@@ -592,7 +570,7 @@
         }
 
         async function downloadCanvas() {
-            if (!canvas) return;
+            if (!canvas || !baseImgWidth || !baseImgHeight) return;
 
             let suggestedFileName = 'mask.png';
             if (baseFileName) {
@@ -605,22 +583,23 @@
                 }
             }
 
-            // --- MASK EXPORT LOGIC START ---
+            // Save current view state
+            const originalWidth = canvas.width;
+            const originalHeight = canvas.height;
+            const originalVpt = canvas.viewportTransform;
+            
+            // Set canvas to original image size for export
+            canvas.setDimensions({ width: baseImgWidth, height: baseImgHeight });
+            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]); // Reset zoom/pan
+
+            // --- MASK PREP ---
             const baseObj = canvas.getObjects().find(o => o.id === 'base_img');
             const overlayObj = canvas.getObjects().find(o => o.id === 'overlay_img');
-            
             const originalBaseVisible = baseObj ? baseObj.visible : true;
             const originalOverlayVisible = overlayObj ? overlayObj.visible : true;
-            
-            // Temporary Zoom Reset for correct export resolution
-            const originalVpt = canvas.viewportTransform;
-            const originalZoom = canvas.getZoom();
-            
-            // Reset viewport to export full resolution image
-            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-            canvas.setZoom(1);
-
             const annotationStates = [];
+
+            // Make annotations black, hide images
             canvas.forEachObject(obj => {
                 if (obj.id !== 'base_img' && obj.id !== 'overlay_img') {
                     annotationStates.push({
@@ -632,41 +611,36 @@
                     obj.set('stroke', '#000000');
                 }
             });
-
             if (baseObj) baseObj.set('visible', false);
             if (overlayObj) overlayObj.set('visible', false);
-
             canvas.backgroundColor = '#ffffff';
-            canvas.renderAll(); 
-
-            // Convert
-            const dataURL = canvas.toDataURL({ format: 'png', quality: 1, multiplier: 1 });
             
-            // --- RESTORE LOGIC ---
+            canvas.renderAll();
+
+            // Export
+            const dataURL = canvas.toDataURL({ format: 'png', quality: 1, multiplier: 1 });
+            const blob = await (await fetch(dataURL)).blob();
+
+            // --- RESTORE STATE ---
             if (baseObj) baseObj.set('visible', originalBaseVisible);
             if (overlayObj) overlayObj.set('visible', originalOverlayVisible);
-            
             annotationStates.forEach(state => {
                 state.obj.set('fill', state.originalFill);
                 state.obj.set('stroke', state.originalStroke);
             });
+            canvas.backgroundColor = '#1a1a1a'; // UI Background
             
-            canvas.backgroundColor = null;
-            // Restore Zoom/Pan
+            // Restore UI size and view
+            canvas.setDimensions({ width: originalWidth, height: originalHeight });
             canvas.setViewportTransform(originalVpt);
-            canvas.setZoom(originalZoom);
-            canvas.renderAll(); 
-            
-            const blob = await (await fetch(dataURL)).blob();
+            canvas.requestRenderAll();
 
+            // Download Trigger
             if (window.showSaveFilePicker) {
                 try {
                     const handle = await window.showSaveFilePicker({
                         suggestedName: suggestedFileName,
-                        types: [{
-                            description: 'PNG Image',
-                            accept: { 'image/png': ['.png'] },
-                        }],
+                        types: [{ description: 'PNG Image', accept: { 'image/png': ['.png'] } }],
                     });
                     const writable = await handle.createWritable();
                     await writable.write(blob);
@@ -674,17 +648,13 @@
                     return; 
                 } catch (err) {
                     if (err.name === 'AbortError') return;
-                    console.warn('Save Picker failed, falling back.');
                 }
             }
 
             let fileName = prompt("Enter file name to save:", suggestedFileName);
             if (!fileName) return;
-
-            if (!fileName.toLowerCase().endsWith('.png')) {
-                fileName += '.png';
-            }
-
+            if (!fileName.toLowerCase().endsWith('.png')) fileName += '.png';
+            
             const link = document.createElement('a');
             link.download = fileName;
             link.href = dataURL;
