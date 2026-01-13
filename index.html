@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Annotator</title></title>
+    <title>Image Annotator Pro</title>
     <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Fabric.js for Canvas manipulation -->
@@ -97,7 +97,7 @@
                                 <i class="ph ph-stack-simple text-lg"></i>
                             </div>
                             <div class="flex-1 min-w-0">
-                                <p id="overlayText" class="text-xs font-medium truncate">Upload Overlay Image (After)</p>
+                                <p id="overlayText" class="text-xs font-medium truncate">Upload Overlay Image (On)</p>
                             </div>
                         </div>
                     </div>
@@ -116,6 +116,7 @@
                 <button id="btnAlign" onclick="setMode('align')" class="w-full py-2 px-4 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all bg-neutral-700 text-neutral-300 hover:bg-neutral-600 mb-4">
                     <i class="ph ph-arrow-counter-clockwise"></i> Adjust Images
                 </button>
+                
 
                 <!-- Sliders -->
                 <div class="space-y-4 px-1">
@@ -123,9 +124,19 @@
                     <div>
                         <div class="flex justify-between items-center mb-1">
                             <label class="text-xs font-medium text-neutral-400">Opacity</label>
-                            <span id="opacityValue" class="text-xs text-neutral-500">50%</span>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] text-neutral-500 uppercase tracking-wider">Toggle Opacity</span>
+                                <!-- Toggle Switch -->
+                                <button id="opacityToggleBtn" onclick="toggleOpacity()" class="w-8 h-4 bg-blue-600 rounded-full relative transition-colors focus:outline-none shadow-inner" title="Toggle Visibility">
+                                    <div id="opacityToggleKnob" class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform shadow-sm translate-x-4"></div>
+                                </button>
+                            </div>
                         </div>
-                        <input type="range" min="0" max="1" step="0.01" value="0.5" oninput="updateOpacity(this.value)" class="w-full h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                        <br>
+                        <div class="flex items-center gap-2">
+                            <input type="range" id="opacitySlider" min="0" max="1" step="0.01" value="0.5" oninput="updateOpacity(this.value)" class="flex-1 h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="opacityValue" class="text-xs text-neutral-500 w-8 text-right">50%</span>
+                        </div>
                     </div>
                     
                     <!-- Rotation -->
@@ -180,11 +191,16 @@
                     </div>
 
                     <!-- Actions -->
-                    <div class="grid grid-cols-2 gap-2 pt-2 border-t border-neutral-700">
-                        <button onclick="undoLastAnnotation()" class="py-2 px-3 flex items-center justify-center gap-2 text-xs bg-neutral-700 hover:bg-neutral-600 rounded text-neutral-300">
-                            <i class="ph ph-arrow-u-up-left"></i> Undo
-                        </button>
-                        <button onclick="clearAnnotations()" class="py-2 px-3 flex items-center justify-center gap-2 text-xs text-red-400 hover:text-red-300 bg-red-900/10 hover:bg-red-900/20 border border-red-900/30 rounded transition-colors">
+                    <div class="space-y-2 pt-2 border-t border-neutral-700">
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="undoAction()" class="py-2 px-3 flex items-center justify-center gap-2 text-xs bg-neutral-700 hover:bg-neutral-600 rounded text-neutral-300" title="Undo (Ctrl+Z)">
+                                <i class="ph ph-arrow-u-up-left"></i> Undo
+                            </button>
+                            <button onclick="redoAction()" class="py-2 px-3 flex items-center justify-center gap-2 text-xs bg-neutral-700 hover:bg-neutral-600 rounded text-neutral-300" title="Redo (Ctrl+R)">
+                                <i class="ph ph-arrow-u-up-right"></i> Redo
+                            </button>
+                        </div>
+                        <button onclick="clearAnnotations()" class="w-full py-2 px-3 flex items-center justify-center gap-2 text-xs text-red-400 hover:text-red-300 bg-red-900/10 hover:bg-red-900/20 border border-red-900/30 rounded transition-colors">
                             <i class="ph ph-trash"></i> Clear All
                         </button>
                     </div>
@@ -247,6 +263,9 @@
         let polyLines = [];
         let polyActiveLine = null;
 
+        // Undo/Redo Unified Stack
+        let globalRedoStack = [];
+
         window.onload = function() {
             const container = document.getElementById('canvasScrollArea');
             canvas = new fabric.Canvas('c', {
@@ -292,7 +311,10 @@
                     canvas.defaultCursor = 'grabbing';
                     canvas.setCursor('grabbing');
                 } else if (currentMode === 'annotate' && currentTool === 'poly') {
-                    addPolygonPoint(options);
+                    const pointer = canvas.getPointer(options.e);
+                    _addPoint(pointer.x, pointer.y);
+                    // Clear redo stack on new input to maintain history consistency
+                    globalRedoStack = [];
                 }
             });
 
@@ -326,6 +348,20 @@
                     finishPolygon();
                 }
             });
+
+            // Keyboard shortcut for Undo (Ctrl+Z) and Redo (Ctrl+R)
+            document.addEventListener('keydown', function(e) {
+                // Check for Undo
+                if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                    e.preventDefault();
+                    undoAction();
+                }
+                // Check for Redo (Ctrl+R)
+                if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+                    e.preventDefault(); // Prevent Browser Reload
+                    redoAction();
+                }
+            });
         };
 
         // --- ZOOM CONTROLS ---
@@ -353,9 +389,9 @@
         }
 
         // --- POLYGON LOGIC ---
-        function addPolygonPoint(options) {
-            const pointer = canvas.getPointer(options.e);
-            const points = [pointer.x, pointer.y, pointer.x, pointer.y];
+        // Helper to add a point programmatically
+        function _addPoint(x, y) {
+            const points = [x, y, x, y];
             
             const line = new fabric.Line(points, {
                 strokeWidth: 1, 
@@ -368,10 +404,15 @@
                 evented: false
             });
             
-            polyPoints.push({ x: pointer.x, y: pointer.y });
+            polyPoints.push({ x: x, y: y });
             polyLines.push(line);
             canvas.add(line);
             polyActiveLine = line;
+        }
+
+        // Old function replaced by logic in mousedown + _addPoint
+        function addPolygonPoint(options) {
+            // Placeholder if called directly, but now handled via _addPoint
         }
 
         function finishPolygon() {
@@ -390,9 +431,84 @@
                 });
                 canvas.add(polygon);
             }
+            
+            // Reset
             polyPoints = [];
+            globalRedoStack = []; // Clear redo stack on finish shape
         }
 
+        // --- UNDO/REDO ACTIONS ---
+        function undoAction() {
+            if (polyPoints.length > 0) {
+                undoLastPoint();
+            } else {
+                undoLastAnnotation();
+            }
+        }
+
+        function redoAction() {
+            if (globalRedoStack.length > 0) {
+                const action = globalRedoStack.pop();
+                if (action.type === 'point') {
+                    // Update the PREVIOUS line to connect to this point (visual fix)
+                    if (polyActiveLine) {
+                        polyActiveLine.set({ x2: action.x, y2: action.y });
+                    }
+                    _addPoint(action.x, action.y);
+                    canvas.renderAll();
+                } else if (action.type === 'shape') {
+                    canvas.add(action.object);
+                    canvas.renderAll();
+                }
+            }
+        }
+
+        function undoLastPoint() {
+            if (polyPoints.length > 0) {
+                const point = polyPoints.pop();
+                const lineToRemove = polyLines.pop();
+                if (lineToRemove) {
+                    canvas.remove(lineToRemove);
+                }
+
+                // Restore active line to previous point
+                if (polyLines.length > 0) {
+                    polyActiveLine = polyLines[polyLines.length - 1];
+                } else {
+                    polyActiveLine = null;
+                }
+                
+                // Push to global stack
+                globalRedoStack.push({ type: 'point', x: point.x, y: point.y });
+                
+                canvas.renderAll();
+            }
+        }
+
+        function undoLastAnnotation() {
+            const objects = canvas.getObjects();
+            // Iterate backwards to find last non-image object
+            for (let i = objects.length - 1; i >= 0; i--) {
+                const obj = objects[i];
+                if (obj.id !== 'base_img' && obj.id !== 'overlay_img') {
+                    canvas.remove(obj);
+                    globalRedoStack.push({ type: 'shape', object: obj });
+                    return; // Only undo one
+                }
+            }
+        }
+
+        function clearAnnotations() {
+            const objects = canvas.getObjects();
+            objects.forEach(obj => {
+                if (obj.id !== 'base_img' && obj.id !== 'overlay_img') {
+                    canvas.remove(obj);
+                }
+            });
+            globalRedoStack = []; // Clear redo stack on clear all
+        }
+
+        // --- IMAGE HANDLING ---
         function handleImageUpload(e, type) {
             const file = e.target.files[0];
             if (!file) return;
@@ -409,7 +525,6 @@
                 
                 fabric.Image.fromURL(data, function(img) {
                     if (type === 'base') {
-                        // Don't resize canvas, just store dims
                         baseImgWidth = img.width;
                         baseImgHeight = img.height;
                         
@@ -434,15 +549,13 @@
                         document.getElementById('emptyState').style.display = 'none';
                         document.getElementById('annotateSection').classList.remove('opacity-50', 'pointer-events-none');
                         
-                        // Handle Overlay Ordering
                         const existingOverlay = canvas.getObjects().find(o => o.id === 'overlay_img');
                         if (existingOverlay) {
                             existingOverlay.set({ left: 0, top: 0 });
                             existingOverlay.setCoords();
                             existingOverlay.moveTo(1); 
                         }
-                        
-                        fitToScreen(); // Center view on new image
+                        fitToScreen(); 
 
                     } else {
                         img.set({
@@ -481,7 +594,6 @@
         function setMode(mode) {
             currentMode = mode;
             
-            // UI
             const btnAlign = document.getElementById('btnAlign');
             const btnAnnotate = document.getElementById('btnAnnotate');
             const alignBadge = document.getElementById('alignBadge');
@@ -497,6 +609,20 @@
 
             if (mode === 'align') {
                 canvas.isDrawingMode = false;
+                
+                const overlayObj = canvas.getObjects().find(o => o.id === 'overlay_img');
+                if (overlayObj) {
+                    overlayObj.selectable = false;
+                    overlayObj.evented = false;
+                }
+                
+                canvas.forEachObject(obj => {
+                    if (obj.id !== 'overlay_img' && obj.id !== 'base_img') {
+                        obj.selectable = false;
+                        obj.evented = false;
+                    }
+                });
+
                 btnAlign.classList.remove('bg-neutral-700', 'text-neutral-300');
                 btnAlign.classList.add('bg-blue-600', 'text-white');
                 alignBadge.classList.remove('hidden');
@@ -527,15 +653,50 @@
                 canvas.isDrawingMode = false;
                 canvas.discardActiveObject();
                 canvas.forEachObject(o => o.selectable = false);
+                // Don't reset points here to allow resuming? No, better reset to avoid ghosts.
                 polyPoints = [];
             }
         }
 
-        function updateOpacity(val) {
-            document.getElementById('opacityValue').textContent = Math.round(val * 100) + '%';
+        // --- ADJUSTMENT LOGIC ---
+        function toggleOpacity() {
             const overlayObj = canvas.getObjects().find(o => o.id === 'overlay_img');
             if (overlayObj) {
-                overlayObj.set('opacity', parseFloat(val));
+                const current = overlayObj.opacity;
+                // If basically visible, hide it. If hidden/semi, show full.
+                const newVal = current > 0.05 ? 0 : 1;
+                
+                // Update UI (Slider calls updateOpacity which handles logic)
+                const slider = document.getElementById('opacitySlider');
+                if (slider) {
+                    slider.value = newVal;
+                    updateOpacity(newVal); 
+                }
+            }
+        }
+
+        function updateOpacity(val) {
+            const floatVal = parseFloat(val);
+            document.getElementById('opacityValue').textContent = Math.round(floatVal * 100) + '%';
+            
+            // Switch UI Logic
+            const btn = document.getElementById('opacityToggleBtn');
+            const knob = document.getElementById('opacityToggleKnob');
+            if (btn && knob) {
+                if (floatVal > 0) {
+                    btn.classList.remove('bg-neutral-600');
+                    btn.classList.add('bg-blue-600');
+                    knob.classList.add('translate-x-4');
+                } else {
+                    btn.classList.remove('bg-blue-600');
+                    btn.classList.add('bg-neutral-600');
+                    knob.classList.remove('translate-x-4');
+                }
+            }
+
+            const overlayObj = canvas.getObjects().find(o => o.id === 'overlay_img');
+            if (overlayObj) {
+                overlayObj.set('opacity', floatVal);
                 canvas.requestRenderAll();
             }
         }
@@ -547,26 +708,6 @@
                 overlayObj.rotate(parseFloat(val));
                 canvas.requestRenderAll();
             }
-        }
-
-        function undoLastAnnotation() {
-            const objects = canvas.getObjects();
-            for (let i = objects.length - 1; i >= 0; i--) {
-                const obj = objects[i];
-                if (obj.id !== 'base_img' && obj.id !== 'overlay_img') {
-                    canvas.remove(obj);
-                    break; 
-                }
-            }
-        }
-
-        function clearAnnotations() {
-            const objects = canvas.getObjects();
-            objects.forEach(obj => {
-                if (obj.id !== 'base_img' && obj.id !== 'overlay_img') {
-                    canvas.remove(obj);
-                }
-            });
         }
 
         async function downloadCanvas() {
@@ -583,23 +724,19 @@
                 }
             }
 
-            // Save current view state
             const originalWidth = canvas.width;
             const originalHeight = canvas.height;
             const originalVpt = canvas.viewportTransform;
             
-            // Set canvas to original image size for export
             canvas.setDimensions({ width: baseImgWidth, height: baseImgHeight });
-            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]); // Reset zoom/pan
+            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]); 
 
-            // --- MASK PREP ---
             const baseObj = canvas.getObjects().find(o => o.id === 'base_img');
             const overlayObj = canvas.getObjects().find(o => o.id === 'overlay_img');
             const originalBaseVisible = baseObj ? baseObj.visible : true;
             const originalOverlayVisible = overlayObj ? overlayObj.visible : true;
             const annotationStates = [];
 
-            // Make annotations black, hide images
             canvas.forEachObject(obj => {
                 if (obj.id !== 'base_img' && obj.id !== 'overlay_img') {
                     annotationStates.push({
@@ -617,25 +754,21 @@
             
             canvas.renderAll();
 
-            // Export
             const dataURL = canvas.toDataURL({ format: 'png', quality: 1, multiplier: 1 });
             const blob = await (await fetch(dataURL)).blob();
 
-            // --- RESTORE STATE ---
             if (baseObj) baseObj.set('visible', originalBaseVisible);
             if (overlayObj) overlayObj.set('visible', originalOverlayVisible);
             annotationStates.forEach(state => {
                 state.obj.set('fill', state.originalFill);
                 state.obj.set('stroke', state.originalStroke);
             });
-            canvas.backgroundColor = '#1a1a1a'; // UI Background
+            canvas.backgroundColor = '#1a1a1a'; 
             
-            // Restore UI size and view
             canvas.setDimensions({ width: originalWidth, height: originalHeight });
             canvas.setViewportTransform(originalVpt);
             canvas.requestRenderAll();
 
-            // Download Trigger
             if (window.showSaveFilePicker) {
                 try {
                     const handle = await window.showSaveFilePicker({
